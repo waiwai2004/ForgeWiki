@@ -422,8 +422,52 @@ const LandingIntro: React.FC<LandingIntroProps> = ({ onEnter }) => {
   );
 };
 
+// API helper for server-side storage
+const API_BASE = '/api/resources';
+
+async function apiGetAll(): Promise<Record<string, any[]>> {
+  try {
+    const res = await fetch(API_BASE);
+    if (!res.ok) throw new Error('Failed to fetch');
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+async function apiSaveAll(data: {
+  sets: GameSet[];
+  items: ItemResource[];
+  weapons: GearResource[];
+  armors: GearResource[];
+  enemies: EnemyResource[];
+  events: EventResource[];
+}) {
+  try {
+    await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  } catch (err) {
+    console.error('Failed to save to server:', err);
+  }
+}
+
+async function apiSaveType(type: string, data: any[]) {
+  try {
+    await fetch(`${API_BASE}/${type}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  } catch (err) {
+    console.error(`Failed to save ${type} to server:`, err);
+  }
+}
+
 export default function App() {
-  // State for resources backed by localStorage
+  // State for resources backed by server API
   const [sets, setSets] = useState<GameSet[]>([]);
   const [items, setItems] = useState<ItemResource[]>([]);
   const [weapons, setWeapons] = useState<GearResource[]>([]);
@@ -433,13 +477,7 @@ export default function App() {
 
   // UI state
   const [activeTab, setActiveTab] = useState<ResourceType>('items');
-  const [hasEntered, setHasEntered] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('forge_has_entered') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [hasEntered, setHasEntered] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStar, setFilterStar] = useState<number>(0);
   const [filterSet, setFilterSet] = useState<string>('all');
@@ -511,54 +549,23 @@ export default function App() {
     { id: 'opt_init_1', text: '触摸雕像', result: '获得随机诅咒', probability: 100 }
   ]);
 
-  // Load from local storage
+  // Load from server API
   useEffect(() => {
-    const loadedSets = localStorage.getItem('fc_sets');
-    const loadedItems = localStorage.getItem('fc_items');
-    const loadedWeapons = localStorage.getItem('fc_weapons');
-    const loadedArmors = localStorage.getItem('fc_armors');
-    const loadedEnemies = localStorage.getItem('fc_enemies');
-    const loadedEvents = localStorage.getItem('fc_events');
-
-    if (loadedSets) setSets(JSON.parse(loadedSets));
-    else {
-      setSets(INITIAL_SETS);
-      localStorage.setItem('fc_sets', JSON.stringify(INITIAL_SETS));
-    }
-
-    if (loadedItems) setItems(JSON.parse(loadedItems));
-    else {
-      setItems(INITIAL_ITEMS);
-      localStorage.setItem('fc_items', JSON.stringify(INITIAL_ITEMS));
-    }
-
-    if (loadedWeapons || loadedArmors) {
-      if (loadedWeapons) setWeapons(JSON.parse(loadedWeapons));
-      if (loadedArmors) setArmors(JSON.parse(loadedArmors));
-    } else {
-      const dbWeapons = INITIAL_GEARS.filter(g => g.type === 'weapon');
-      const dbArmors = INITIAL_GEARS.filter(g => g.type === 'armor');
-      setWeapons(dbWeapons);
-      setArmors(dbArmors);
-      localStorage.setItem('fc_weapons', JSON.stringify(dbWeapons));
-      localStorage.setItem('fc_armors', JSON.stringify(dbArmors));
-    }
-
-    if (loadedEnemies) setEnemies(JSON.parse(loadedEnemies));
-    else {
-      setEnemies(INITIAL_ENEMIES);
-      localStorage.setItem('fc_enemies', JSON.stringify(INITIAL_ENEMIES));
-    }
-
-    if (loadedEvents) setEvents(JSON.parse(loadedEvents));
-    else {
-      setEvents(INITIAL_EVENTS);
-      localStorage.setItem('fc_events', JSON.stringify(INITIAL_EVENTS));
-    }
+    apiGetAll().then(data => {
+      setSets(data.sets || []);
+      setItems(data.items || []);
+      setWeapons(data.weapons || []);
+      setArmors(data.armors || []);
+      setEnemies(data.enemies || []);
+      setEvents(data.events || []);
+      // Check if user has entered before
+      const hasData = (data.items?.length || 0) > 0 || (data.weapons?.length || 0) > 0 || (data.enemies?.length || 0) > 0;
+      setHasEntered(hasData);
+    });
   }, []);
 
-  // Sync to local storage on edits
-  const saveAllToLocal = (
+  // Sync to server API on edits
+  const saveAllToServer = (
     updatedSets: GameSet[],
     updatedItems: ItemResource[],
     updatedWeapons: GearResource[],
@@ -566,12 +573,14 @@ export default function App() {
     updatedEnemies: EnemyResource[],
     updatedEvents: EventResource[]
   ) => {
-    localStorage.setItem('fc_sets', JSON.stringify(updatedSets));
-    localStorage.setItem('fc_items', JSON.stringify(updatedItems));
-    localStorage.setItem('fc_weapons', JSON.stringify(updatedWeapons));
-    localStorage.setItem('fc_armors', JSON.stringify(updatedArmors));
-    localStorage.setItem('fc_enemies', JSON.stringify(updatedEnemies));
-    localStorage.setItem('fc_events', JSON.stringify(updatedEvents));
+    apiSaveAll({
+      sets: updatedSets,
+      items: updatedItems,
+      weapons: updatedWeapons,
+      armors: updatedArmors,
+      enemies: updatedEnemies,
+      events: updatedEvents
+    });
   };
 
   const showToast = (text: string, type: 'success' | 'blood' | 'cyan' = 'success') => {
@@ -674,7 +683,7 @@ export default function App() {
 
       const freshList = [newItem, ...items];
       setItems(freshList);
-      saveAllToLocal(sets, freshList, weapons, armors, enemies, events);
+      saveAllToServer(sets, freshList, weapons, armors, enemies, events);
       showToast(`已成功录入新道具: ${newItem.id} - ${newItem.name}`);
     } 
     else if (activeTab === 'weapons' || activeTab === 'armors') {
@@ -704,11 +713,11 @@ export default function App() {
       if (activeTab === 'weapons') {
         const freshList = [newGear, ...weapons];
         setWeapons(freshList);
-        saveAllToLocal(sets, items, freshList, armors, enemies, events);
+        saveAllToServer(sets, items, freshList, armors, enemies, events);
       } else {
         const freshList = [newGear, ...armors];
         setArmors(freshList);
-        saveAllToLocal(sets, items, weapons, freshList, enemies, events);
+        saveAllToServer(sets, items, weapons, freshList, enemies, events);
       }
       showToast(`已成功录入新装备: ${newGear.id} - ${newGear.name}`);
     }
@@ -741,7 +750,7 @@ export default function App() {
 
       const freshList = [newEnemy, ...enemies];
       setEnemies(freshList);
-      saveAllToLocal(sets, items, weapons, armors, freshList, events);
+      saveAllToServer(sets, items, weapons, armors, freshList, events);
       showToast(`已成功录入新敌人类: ${newEnemy.id} - ${newEnemy.name}`);
     }
     else if (activeTab === 'events') {
@@ -761,7 +770,7 @@ export default function App() {
 
       const freshList = [newEvent, ...events];
       setEvents(freshList);
-      saveAllToLocal(sets, items, weapons, armors, enemies, freshList);
+      saveAllToServer(sets, items, weapons, armors, enemies, freshList);
       showToast(`已成功录入新事件: ${newEvent.id} - ${newEvent.name}`);
     }
 
@@ -852,7 +861,7 @@ export default function App() {
         break;
     }
 
-    saveAllToLocal(sets, updatedItems, updatedWeapons, updatedArmors, updatedEnemies, updatedEvents);
+    saveAllToServer(sets, updatedItems, updatedWeapons, updatedArmors, updatedEnemies, updatedEvents);
     if (selectedItem && selectedItem.id === id) {
       setSelectedItem(null);
     }
@@ -1145,7 +1154,7 @@ export default function App() {
           setEnemies(restoredEnemies);
           setEvents(restoredEvents);
 
-          saveAllToLocal(
+          saveAllToServer(
             restoredSets,
             restoredItems,
             restoredWeapons,
@@ -1175,7 +1184,7 @@ export default function App() {
     setEnemies(INITIAL_ENEMIES);
     setEvents(INITIAL_EVENTS);
 
-    saveAllToLocal(
+    saveAllToServer(
       INITIAL_SETS,
       INITIAL_ITEMS,
       INITIAL_GEARS.filter(g => g.type === 'weapon'),
@@ -1195,9 +1204,7 @@ export default function App() {
     const added = { id: formattedId, ...newSet };
     const fresh = [...sets, added];
     setSets(fresh);
-    saveAllToLocal(sets, items, weapons, armors, enemies, events);
-    // Explicitly update overall sets mapping in localStorage
-    localStorage.setItem('fc_sets', JSON.stringify(fresh));
+    saveAllToServer(fresh, items, weapons, armors, enemies, events);
     playSound('socket');
   };
 
@@ -1210,7 +1217,7 @@ export default function App() {
     }
     const fresh = sets.filter(s => s.id !== id);
     setSets(fresh);
-    localStorage.setItem('fc_sets', JSON.stringify(fresh));
+    apiSaveType('sets', fresh);
     showToast(`套装 [${id}] 已解散并从规则中除名`, 'blood');
     playSound('delete');
   };
@@ -1368,11 +1375,6 @@ export default function App() {
       <LandingIntro 
         onEnter={() => {
           setHasEntered(true);
-          try {
-            localStorage.setItem('forge_has_entered', 'true');
-          } catch (e) {
-            console.warn(e);
-          }
         }} 
       />
     );
@@ -1406,9 +1408,6 @@ export default function App() {
               <div 
                 onClick={() => {
                   setHasEntered(false);
-                  try {
-                    localStorage.removeItem('forge_has_entered');
-                  } catch {}
                 }}
                 className="w-5 h-5 border border-[#d4a853]/40 flex items-center justify-center rotate-45 bg-black shrink-0 hover:border-[#d4a853] hover:shadow-[0_0_8px_rgba(212,168,83,0.35)] transition-all cursor-pointer"
                 title="重温铁砧序幕动画"

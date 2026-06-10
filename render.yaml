@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: forge-wiki
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: forge-wiki-db
+          property: connectionString
+
+databases:
+  - name: forge-wiki-db
+    plan: free
