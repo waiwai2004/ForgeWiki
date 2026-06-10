@@ -425,14 +425,22 @@ const LandingIntro: React.FC<LandingIntroProps> = ({ onEnter }) => {
 // API helper for server-side storage
 const API_BASE = '/api/resources';
 
-async function apiGetAll(): Promise<Record<string, any[]>> {
-  try {
-    const res = await fetch(API_BASE);
-    if (!res.ok) throw new Error('Failed to fetch');
-    return await res.json();
-  } catch {
-    return {};
+async function apiGetAll(retries = 5): Promise<Record<string, any[]>> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch(API_BASE, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data && Object.keys(data).length > 0) return data;
+      // Got empty response, server might still be starting up
+    } catch {
+      if (attempt < retries - 1) {
+        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+        continue;
+      }
+    }
   }
+  return {};
 }
 
 async function apiSaveAll(data: {
@@ -549,19 +557,36 @@ export default function App() {
     { id: 'opt_init_1', text: '触摸雕像', result: '获得随机诅咒', probability: 100 }
   ]);
 
-  // Load from server API
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load from server API with auto-retry
   useEffect(() => {
-    apiGetAll().then(data => {
-      setSets(data.sets || []);
-      setItems(data.items || []);
-      setWeapons(data.weapons || []);
-      setArmors(data.armors || []);
-      setEnemies(data.enemies || []);
-      setEvents(data.events || []);
-      // Check if user has entered before
-      const hasData = (data.items?.length || 0) > 0 || (data.weapons?.length || 0) > 0 || (data.enemies?.length || 0) > 0;
-      setHasEntered(hasData);
-    });
+    let cancelled = false;
+    async function loadData(attempt = 0) {
+      setIsLoading(true);
+      const data = await apiGetAll();
+      if (cancelled) return;
+      if (data && Object.keys(data).length > 0) {
+        setSets(data.sets || []);
+        setItems(data.items || []);
+        setWeapons(data.weapons || []);
+        setArmors(data.armors || []);
+        setEnemies(data.enemies || []);
+        setEvents(data.events || []);
+        const hasData = (data.items?.length || 0) > 0 || (data.weapons?.length || 0) > 0 || (data.enemies?.length || 0) > 0;
+        setHasEntered(hasData);
+        setIsLoading(false);
+      } else if (attempt < 10) {
+        // Keep retrying if data is empty (server might be starting up)
+        setTimeout(() => loadData(attempt + 1), 3000);
+      } else {
+        // Give up after many retries, let user in anyway
+        setHasEntered(true);
+        setIsLoading(false);
+      }
+    }
+    loadData();
+    return () => { cancelled = true; };
   }, []);
 
   // Sync to server API on edits
@@ -1369,6 +1394,19 @@ export default function App() {
   };
 
   const currentDetails = getActiveItemDetails();
+
+  // Show loading screen while fetching data from server
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-3 border-[#d4a853]/30 border-t-[#d4a853] rounded-full animate-spin mx-auto" />
+          <p className="text-[#d4a853]/70 font-gothic text-lg tracking-widest">正在连接服务器...</p>
+          <p className="text-[#666] text-xs">首次加载可能需要较长时间</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasEntered) {
     return (
