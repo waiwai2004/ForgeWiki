@@ -558,6 +558,7 @@ export default function App() {
   ]);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Load from server API with auto-retry
   useEffect(() => {
@@ -588,6 +589,24 @@ export default function App() {
     loadData();
     return () => { cancelled = true; };
   }, []);
+
+  // Manual refresh: re-fetch all data from server
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    const data = await apiGetAll(3);
+    if (data && Object.keys(data).length > 0) {
+      setSets(data.sets || []);
+      setItems(data.items || []);
+      setWeapons(data.weapons || []);
+      setArmors(data.armors || []);
+      setEnemies(data.enemies || []);
+      setEvents(data.events || []);
+      showToast('数据已从服务器刷新', 'success');
+    } else {
+      showToast('刷新失败，服务器可能正在启动', 'blood');
+    }
+    setIsRefreshing(false);
+  };
 
   // Sync to server API on edits
   const saveAllToServer = (
@@ -1548,6 +1567,22 @@ export default function App() {
               </button>
             ))}
           </div>
+
+          {/* Refresh Button */}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold tracking-wide transition-all border rounded-lg shrink-0
+              ${isRefreshing 
+                ? 'border-[#d4a853]/50 text-[#d4a853]/50 cursor-wait bg-[#d4a853]/5' 
+                : 'border-[#b89b5c]/30 text-[#999] hover:text-[#d4a853] hover:border-[#d4a853] bg-black/40'
+              }`}
+            title="从服务器重新获取所有数据"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{isRefreshing ? '刷新中...' : '刷新数据'}</span>
+          </button>
 
           {/* Real-time filtering panel depending on activeTab */}
           {activeTab !== 'sets' ? (
