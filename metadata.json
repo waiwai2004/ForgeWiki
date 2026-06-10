@@ -1,0 +1,8 @@
+{
+  "name": "ForgeCraft",
+  "description": "面向 ForgeCraft 游戏开发的铁匠铺内部资源协同与锻造系统，完美支持配方、防具、武器、矿物与铸造事件五大库管理，整合锻造模板规范，采用铁匠炉火与暗金金属混搭风格。",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
