@@ -26,7 +26,6 @@ async function initDB() {
         data JSONB NOT NULL DEFAULT '[]'
       )
     `);
-    // Ensure all resource types exist
     const types = ['sets', 'items', 'weapons', 'armors', 'enemies', 'events'];
     for (const type of types) {
       await client.query(
@@ -46,7 +45,7 @@ async function initDB() {
 app.get('/api/resources', async (req, res) => {
   try {
     const result = await pool.query('SELECT type, data FROM resources');
-    const data: Record<string, any[]> = {};
+    const data = {};
     for (const row of result.rows) {
       data[row.type] = row.data;
     }
@@ -74,7 +73,7 @@ app.get('/api/resources/:type', async (req, res) => {
 // PUT - Replace all data for a resource type
 app.put('/api/resources/:type', async (req, res) => {
   try {
-    const result = await pool.query(
+    await pool.query(
       `INSERT INTO resources (type, data) VALUES ($1, $2) ON CONFLICT (type) DO UPDATE SET data = $2`,
       [req.params.type, JSON.stringify(req.body)]
     );
@@ -128,7 +127,6 @@ app.delete('/api/resources/:type', async (req, res) => {
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-  // SPA fallback
   app.get('*', (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
