@@ -21,6 +21,7 @@ import {
 import { GothicCard } from './components/GothicCard';
 import { FramePreview } from './components/FramePreview';
 import { SetManager } from './components/SetManager';
+import { ArtAssetLibrary } from './components/ArtAssetLibrary';
 import {
   Search,
   Plus,
@@ -46,7 +47,9 @@ import {
   ArrowDownCircle,
   HelpCircle,
   Award,
-  GitBranch
+  GitBranch,
+  Image,
+  FolderOpen
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { playSound } from './utils/audio';
@@ -483,6 +486,20 @@ export default function App() {
   const [enemies, setEnemies] = useState<EnemyResource[]>([]);
   const [events, setEvents] = useState<EventResource[]>([]);
 
+  // Art Assets state
+  interface ArtAsset {
+    id: string;
+    filename: string;
+    category: string;
+    url: string;
+    size: number;
+    uploadedAt: string;
+    uploadedBy?: string;
+  }
+  const [artAssets, setArtAssets] = useState<Record<string, ArtAsset[]>>({
+    ui: [], forge: [], shop: [], other: []
+  });
+
   // UI state
   const [activeTab, setActiveTab] = useState<ResourceType>('items');
   const [hasEntered, setHasEntered] = useState<boolean>(false);
@@ -606,6 +623,76 @@ export default function App() {
       showToast('刷新失败，服务器可能正在启动', 'blood');
     }
     setIsRefreshing(false);
+  };
+
+  // Art Assets - fetch from server
+  const fetchArtAssets = async () => {
+    try {
+      const res = await fetch('/api/assets', { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data) setArtAssets(data);
+    } catch { /* ignore */ }
+  };
+
+  // Art Assets - load on mount and after refresh
+  useEffect(() => { fetchArtAssets(); }, []);
+
+  // Art Assets - upload files
+  const handleArtUpload = async (category: string, files: File[]) => {
+    const formData = new FormData();
+    formData.append('category', category);
+    for (const file of files) formData.append('files', file);
+    try {
+      const res = await fetch('/api/assets/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        showToast(`已上传 ${files.length} 个文件`, 'success');
+        await fetchArtAssets();
+      } else {
+        showToast('上传失败', 'blood');
+      }
+    } catch {
+      showToast('上传失败，网络错误', 'blood');
+    }
+  };
+
+  // Art Assets - delete file
+  const handleArtDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/assets/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('文件已删除', 'success');
+        await fetchArtAssets();
+      } else {
+        showToast('删除失败', 'blood');
+      }
+    } catch {
+      showToast('删除失败，网络错误', 'blood');
+    }
+  };
+
+  // Art Assets - download zip
+  const handleArtDownloadZip = async (category?: string) => {
+    try {
+      const url = category ? `/api/assets/zip?category=${category}` : '/api/assets/zip';
+      const res = await fetch(url);
+      if (res.ok) {
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = category ? `${category}-assets.zip` : 'all-assets.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('下载开始', 'success');
+      } else {
+        showToast('打包下载失败', 'blood');
+      }
+    } catch {
+      showToast('下载失败', 'blood');
+    }
   };
 
   // Sync to server API on edits
@@ -1544,6 +1631,7 @@ export default function App() {
               { id: 'enemies', label: '怪物/守卫库', icon: <Skull className="w-4 h-4" /> },
               { id: 'events', label: '事件库', icon: <MapPin className="w-4 h-4" /> },
               { id: 'sets', label: '自定义套装', icon: <Award className="w-4 h-4" /> },
+              { id: 'art', label: '美术素材库', icon: <Image className="w-4 h-4" /> },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1585,7 +1673,7 @@ export default function App() {
           </button>
 
           {/* Real-time filtering panel depending on activeTab */}
-          {activeTab !== 'sets' ? (
+          {activeTab !== 'sets' && activeTab !== 'art' ? (
             <div className="flex flex-wrap items-center gap-3 bg-black/40 border border-[#b89b5c]/30 p-2 rounded-lg">
               
               {/* Search Input */}
@@ -1695,6 +1783,15 @@ export default function App() {
                   sets={sets}
                   onAddSet={handleAddSet}
                   onDeleteSet={handleDeleteSet}
+                />
+              </div>
+            ) : activeTab === 'art' ? (
+              <div className="animate-fade">
+                <ArtAssetLibrary
+                  assets={artAssets}
+                  onUpload={handleArtUpload}
+                  onDelete={handleArtDelete}
+                  onDownloadZip={handleArtDownloadZip}
                 />
               </div>
             ) : (
